@@ -31,10 +31,13 @@ const FolderDetails = ({
   clientName: string;
   onBack: () => void;
 }) => {
-  const { user, userRole } = useAuth();
+  const { user, userRole, appPermissions } = useAuth();
   const [files, setFiles] = useState<FileType[]>([]);
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  const canUpload = userRole === "admin" || !!appPermissions?.user_can_manage_folders;
+  const canDelete = userRole === "admin" || !!appPermissions?.user_can_delete_files;
 
   const fetchFiles = useCallback(async () => {
     try {
@@ -165,7 +168,7 @@ const FolderDetails = ({
             </CardDescription>
           </div>
           <div>
-            {userRole === "admin" && (
+            {canUpload && (
               <>
                 <Input
                   type="file"
@@ -220,7 +223,7 @@ const FolderDetails = ({
                         >
                           <Download className="h-4 w-4" />
                         </Button>
-                        {userRole === "admin" && (
+                        {canDelete && (
                           <Button
                             variant="destructive"
                             size="sm"

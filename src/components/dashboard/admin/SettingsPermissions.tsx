@@ -21,6 +21,7 @@ type Permissions = {
 const SettingsPermissions = () => {
   const [loading, setLoading] = useState(false);
   const [perm, setPerm] = useState<Permissions | null>(null);
+  const [supportsAccountants, setSupportsAccountants] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -36,6 +37,9 @@ const SettingsPermissions = () => {
       }
       if (data) {
         const p = data as Permissions;
+        const d = data as Record<string, unknown>;
+        const supports = "user_can_view_accountants" in d && "user_can_edit_accountants" in d;
+        setSupportsAccountants(supports);
         setPerm({
           ...p,
           user_can_view_accountants: p.user_can_view_accountants ?? false,
@@ -54,24 +58,50 @@ const SettingsPermissions = () => {
   const handleSave = async () => {
     if (!perm) return;
     setLoading(true);
-    const { error } = await supabase
+    const basePayload = {
+      user_can_view_clients: perm.user_can_view_clients,
+      user_can_edit_clients: perm.user_can_edit_clients,
+      user_can_manage_folders: perm.user_can_manage_folders,
+      user_can_delete_files: perm.user_can_delete_files,
+      admin_can_manage_users: perm.admin_can_manage_users,
+      admin_can_manage_permissions: perm.admin_can_manage_permissions,
+    };
+    const payload = supportsAccountants
+      ? {
+          ...basePayload,
+          user_can_view_accountants: perm.user_can_view_accountants ?? false,
+          user_can_edit_accountants: perm.user_can_edit_accountants ?? false,
+        }
+      : basePayload;
+
+    const { data, error } = await supabase
       .from("app_permissions")
-      .update({
-        user_can_view_clients: perm.user_can_view_clients,
-        user_can_edit_clients: perm.user_can_edit_clients,
-        user_can_manage_folders: perm.user_can_manage_folders,
-        user_can_delete_files: perm.user_can_delete_files,
-        admin_can_manage_users: perm.admin_can_manage_users,
-        admin_can_manage_permissions: perm.admin_can_manage_permissions,
-        user_can_view_accountants: perm.user_can_view_accountants ?? false,
-        user_can_edit_accountants: perm.user_can_edit_accountants ?? false,
-      })
-      .eq("id", perm.id);
+      .update(payload)
+      .eq("id", perm.id)
+      .select("*")
+      .maybeSingle();
+
     setLoading(false);
     if (error) {
       toast.error("Erro ao salvar permissões", { description: error.message });
       return;
     }
+
+    if (!data) {
+      toast.error("Nenhuma permissão foi atualizada. Verifique se seu usuário é admin.");
+      return;
+    }
+
+    const d = data as Record<string, unknown>;
+    const supports = "user_can_view_accountants" in d && "user_can_edit_accountants" in d;
+    setSupportsAccountants(supports);
+    const p = data as Permissions;
+    setPerm({
+      ...p,
+      user_can_view_accountants: p.user_can_view_accountants ?? false,
+      user_can_edit_accountants: p.user_can_edit_accountants ?? false,
+    });
+
     toast.success("Permissões atualizadas com sucesso");
   };
 
