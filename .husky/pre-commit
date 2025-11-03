@@ -1,0 +1,7 @@
+#!/usr/bin/env sh
+
+# Executa lint em arquivos staged e formatação automática
+npx --no-install lint-staged
+
+# Validação de tipos do TypeScript (bloqueia commit em caso de erro)
+npm run typecheck
