@@ -14,9 +14,10 @@ interface ClientsListProps {
   loading: boolean;
   onSelectClient: (client: Client) => void;
   onEditClient: (client: Client) => void;
+  canEdit?: boolean;
 }
 
-const ClientsList = ({ clients, loading, onSelectClient, onEditClient }: ClientsListProps) => {
+const ClientsList = ({ clients, loading, onSelectClient, onEditClient, canEdit = false }: ClientsListProps) => {
   const formatCNPJ = (cnpj: string) => {
     return cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5");
   };
@@ -62,9 +63,11 @@ const ClientsList = ({ clients, loading, onSelectClient, onEditClient }: Clients
               <Button variant="outline" size="sm" onClick={() => onSelectClient(client)}>
                 Ver Detalhes
               </Button>
-              <Button variant="secondary" size="sm" onClick={() => onEditClient(client)}>
-                Editar
-              </Button>
+              {canEdit && (
+                <Button variant="secondary" size="sm" onClick={() => onEditClient(client)}>
+                  Editar
+                </Button>
+              )}
             </TableCell>
           </TableRow>
         ))}

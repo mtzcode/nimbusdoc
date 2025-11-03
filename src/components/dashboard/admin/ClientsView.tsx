@@ -17,12 +17,15 @@ interface Client {
 }
 
 const ClientsView = () => {
-  const { userRole } = useAuth();
+  const { userRole, appPermissions } = useAuth();
   const [clients, setClients] = useState<Client[]>([]);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const canEdit =
+    userRole === "admin" || (userRole === "user" && (appPermissions?.user_can_edit_clients ?? false));
 
   const fetchClients = async () => {
     try {
@@ -104,12 +107,13 @@ const ClientsView = () => {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <ClientsList
-            clients={clients}
-            loading={loading}
-            onSelectClient={setSelectedClient}
-            onEditClient={setEditingClient}
-          />
+      <ClientsList
+        clients={clients}
+        loading={loading}
+        onSelectClient={setSelectedClient}
+        onEditClient={setEditingClient}
+        canEdit={canEdit}
+      />
         </CardContent>
       </Card>
     </div>
