@@ -1,10 +1,10 @@
-import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+// @ts-nocheck
 import { createClient } from "npm:@supabase/supabase-js";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 
 const corsAllowMethods = "POST, OPTIONS";
 const allowedOriginsRaw = Deno.env.get("ALLOWED_ORIGINS") ?? "*"; // e.g.: https://app.example.com,https://staging.example.com
-const allowedOrigins = allowedOriginsRaw.split(",").map((s) => s.trim()).filter(Boolean);
+const allowedOrigins = allowedOriginsRaw.split(",").map((s: string) => s.trim()).filter(Boolean);
 
 function isOriginAllowed(origin: string): boolean {
   if (!origin) return allowedOrigins.includes("*");
@@ -32,7 +32,7 @@ const UpdateAuthSchema = z.object({
   redirectTo: z.string().url().optional(),
 });
 
-serve(async (req) => {
+Deno.serve(async (req: Request) => {
   const origin = req.headers.get("Origin") ?? "";
   const corsHeaders = makeCorsHeaders(origin);
 
@@ -113,7 +113,7 @@ serve(async (req) => {
     let confirmationSent = false;
 
     if (email && email !== profile.email) {
-      const { error: updAuthEmailErr } = await supabaseAdmin.auth.admin.updateUserById(user_id, { email } as any);
+      const { error: updAuthEmailErr } = await supabaseAdmin.auth.admin.updateUserById(user_id, { email });
       if (updAuthEmailErr) {
         log("auth_email_update_error", { error: updAuthEmailErr.message });
         return new Response(JSON.stringify({ error: updAuthEmailErr.message }), { status: 400, headers: corsHeaders });
@@ -130,14 +130,14 @@ serve(async (req) => {
       const { error: sendError } = await supabaseAdmin.auth.signInWithOtp({
         email,
         options: { shouldCreateUser: false, emailRedirectTo: redirectTarget },
-      } as any);
+      });
       confirmationSent = !sendError;
       updatedEmail = true;
       log("email_updated", { user_id });
     }
 
     if (password && password.trim().length > 0) {
-      const { error: updPassErr } = await supabaseAdmin.auth.admin.updateUserById(user_id, { password } as any);
+      const { error: updPassErr } = await supabaseAdmin.auth.admin.updateUserById(user_id, { password });
       if (updPassErr) {
         log("auth_password_update_error", { error: updPassErr.message });
         return new Response(JSON.stringify({ error: updPassErr.message }), { status: 400, headers: corsHeaders });

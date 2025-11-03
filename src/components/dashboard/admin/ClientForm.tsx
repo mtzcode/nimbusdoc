@@ -1,12 +1,15 @@
 import { useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { toast } from "sonner";
+import { notifyError, notifySuccess } from "@/lib/feedback";
+import { Loader2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { clientSchema, type ClientInput } from "@/schemas/client";
+import { createClient } from "@/features/clients/api";
+import { useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/queryKeys";
 
 interface ClientFormProps {
   onSuccess: () => void;
@@ -16,6 +19,7 @@ interface ClientFormProps {
 const ClientForm = ({ onSuccess, onCancel }: ClientFormProps) => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
   const [formData, setFormData] = useState<ClientInput>({
     name: "",
     cnpj: "",
@@ -30,26 +34,29 @@ const ClientForm = ({ onSuccess, onCancel }: ClientFormProps) => {
       const parsed = clientSchema.safeParse(formData);
       if (!parsed.success) {
         const first = parsed.error.errors[0];
-        toast.error(first?.message ?? "Dados inválidos");
+        notifyError("create", "cliente", first?.message ?? "Dados inválidos");
         setLoading(false);
         return;
       }
 
       const { name, cnpj } = parsed.data;
 
-      const { error } = await supabase.from("clients").insert({
+      const response = await createClient({
         name,
         cnpj,
         created_by: user.id,
       });
 
-      if (error) throw error;
+      if (!response.success) {
+        throw new Error(response.error || "Erro ao cadastrar cliente");
+      }
 
-      toast.success("Cliente cadastrado com sucesso!");
+      notifySuccess("create", "cliente", name);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.clients() });
       onSuccess();
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
-      toast.error(message || "Erro ao cadastrar cliente");
+      notifyError("create", "cliente", message);
     } finally {
       setLoading(false);
     }
@@ -85,8 +92,14 @@ const ClientForm = ({ onSuccess, onCancel }: ClientFormProps) => {
               />
             </div>
             <div className="flex gap-2">
-              <Button type="submit" disabled={loading}>
-                {loading ? "Cadastrando..." : "Cadastrar Cliente"}
+              <Button type="submit" disabled={loading} className="gap-2">
+                {loading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Cadastrando...
+                  </>
+                ) : (
+                  "Cadastrar Cliente"
+                )}
               </Button>
               <Button type="button" variant="outline" onClick={onCancel}>
                 Cancelar

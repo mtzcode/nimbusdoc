@@ -1,10 +1,10 @@
-import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+// @ts-nocheck
 import { createClient } from "npm:@supabase/supabase-js";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 
 const corsAllowMethods = "POST, OPTIONS";
 const allowedOriginsRaw = Deno.env.get("ALLOWED_ORIGINS") ?? "*"; // e.g.: https://app.example.com,https://staging.example.com
-const allowedOrigins = allowedOriginsRaw.split(",").map((s) => s.trim()).filter(Boolean);
+const allowedOrigins = allowedOriginsRaw.split(",").map((s: string) => s.trim()).filter(Boolean);
 
 function isOriginAllowed(origin: string): boolean {
   if (!origin) return allowedOrigins.includes("*");
@@ -33,7 +33,7 @@ const CreateUserSchema = z.object({
   redirectTo: z.string().url().optional(),
 });
 
-serve(async (req) => {
+Deno.serve(async (req: Request) => {
   const origin = req.headers.get("Origin") ?? "";
   const corsHeaders = makeCorsHeaders(origin);
 
@@ -125,7 +125,7 @@ serve(async (req) => {
       const { error: sendError } = await supabaseAdmin.auth.signInWithOtp({
         email,
         options: { shouldCreateUser: false, emailRedirectTo: redirectTarget },
-      } as any);
+      });
 
       return new Response(
         JSON.stringify({ success: true, existing_user: true, user_id: userId, confirmation_sent: !sendError }),
@@ -139,7 +139,7 @@ serve(async (req) => {
       password,
       user_metadata: { full_name },
       email_confirm: false,
-    } as any);
+    });
     if (createError) {
       log("user_create_error", { error: createError.message });
       return new Response(JSON.stringify({ error: createError.message }), { status: 400, headers: corsHeaders });
@@ -168,7 +168,7 @@ serve(async (req) => {
     const { error: sendError } = await supabaseAdmin.auth.signInWithOtp({
       email,
       options: { shouldCreateUser: false, emailRedirectTo: redirectTarget },
-    } as any);
+    });
 
     log("user_created", { user_id: userId, role });
     return new Response(

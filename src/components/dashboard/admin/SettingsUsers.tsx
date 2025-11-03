@@ -6,11 +6,13 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+import { notifyError, notifyInfo, notifySuccess } from "@/lib/feedback";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Loader2 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import type { Tables } from "@/integrations/supabase/types";
+import { queryKeys } from "@/lib/queryKeys";
 
 const SettingsUsers = () => {
   const { userRole } = useAuth();
@@ -26,7 +28,7 @@ const SettingsUsers = () => {
   };
 
   const { data: roleRows = [], isLoading: listLoading } = useQuery<UserRoleRow[]>({
-    queryKey: ["site-users"],
+    queryKey: queryKeys.siteUsers(),
     queryFn: async () => {
       const { data, error } = await supabase
         .from("user_roles")
@@ -66,6 +68,7 @@ const SettingsUsers = () => {
     role: "admin" | "user";
     password?: string;
   }>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -82,17 +85,17 @@ const SettingsUsers = () => {
       });
       if (error || data?.error) {
         const message = error?.message ?? data?.error ?? "Erro ao criar usuário";
-        toast.error(message);
+        notifyError("create", "usuário", message);
         return;
       }
-      toast.success("Usuário criado com sucesso!");
+      notifySuccess("create", "usuário", form.full_name);
       if (data?.confirmation_sent) {
-        toast.info("E-mail de confirmação enviado ao novo usuário.");
+        notifyInfo("E-mail de confirmação enviado ao novo usuário.");
       }
       setForm({ full_name: "", email: "", password: "", role: "user" });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      toast.error(message || "Erro ao criar usuário");
+      notifyError("create", "usuário", message);
     } finally {
       setLoading(false);
     }
@@ -115,7 +118,7 @@ const SettingsUsers = () => {
   const saveEdit = async () => {
     if (!editing) return;
     const { row_id, user_id, full_name, email, role, password } = editing;
-
+    setSavingEdit(true);
     try {
       // Atualizar nome
       const { error: nameErr } = await supabase
@@ -157,16 +160,19 @@ const SettingsUsers = () => {
           throw new Error(message);
         }
         if (emailChanged && data?.confirmation_sent) {
-          toast.info("E-mail de confirmação enviado ao usuário.");
+          notifyInfo("E-mail de confirmação enviado ao usuário.");
         }
       }
 
-      toast.success("Usuário atualizado com sucesso!");
+      notifySuccess("update", "usuário", full_name);
       setEditing(null);
-      await queryClient.invalidateQueries({ queryKey: ["site-users"], exact: false });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.siteUsers(), exact: false });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      toast.error(message || "Erro ao salvar alterações");
+      notifyError("update", "usuário", message);
+    }
+    finally {
+      setSavingEdit(false);
     }
   };
 
@@ -224,8 +230,14 @@ const SettingsUsers = () => {
               </Select>
             </div>
             <div className="flex gap-2">
-              <Button type="submit" disabled={loading}>
-                {loading ? "Criando..." : "Criar Usuário"}
+              <Button type="submit" disabled={loading} className="gap-2">
+                {loading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Criando...
+                  </>
+                ) : (
+                  "Criar Usuário"
+                )}
               </Button>
             </div>
           </form>
@@ -308,10 +320,10 @@ const SettingsUsers = () => {
                       <TableCell>
                         {editing?.user_id === row.user_id ? (
                           <div className="flex gap-2">
-                            <Button variant="default" onClick={saveEdit}>
-                              Salvar
+                            <Button variant="default" onClick={saveEdit} disabled={savingEdit}>
+                              {savingEdit ? "Salvando..." : "Salvar"}
                             </Button>
-                            <Button variant="secondary" onClick={cancelEdit}>
+                            <Button variant="secondary" onClick={cancelEdit} disabled={savingEdit}>
                               Cancelar
                             </Button>
                           </div>

@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+// Supabase removido: usar APIs centralizadas
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Plus, Folder, Users, Trash2, Loader2, Link as LinkIcon } from "lucide-react";
+import { ArrowLeft, Plus, Folder as FolderIcon, Users, Trash2, Loader2, Link as LinkIcon } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -11,7 +11,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import FolderDetails from "./FolderDetails";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { Tables } from "@/integrations/supabase/types";
+import { listFolders, createFolder, type Folder } from "@/features/folders/api";
+import { listAccountants, getClientAccountants, assignClientToAccountant, unassignClientFromAccountant, type Accountant } from "@/features/accountants/api";
 
 interface Client {
   id: string;
@@ -35,13 +36,9 @@ const ClientDetails = ({ client, onBack }: { client: Client; onBack: () => void 
   const { data: folders = [], isLoading: foldersLoading } = useQuery<FolderType[]>({
     queryKey: ["folders", client.id],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("folders")
-        .select("*")
-        .eq("client_id", client.id)
-        .order("created_at", { ascending: false });
-      if (error) throw error;
-      return (data || []) as FolderType[];
+      const response = await listFolders(client.id);
+      if (!response.success) throw new Error(response.error || "Erro ao carregar pastas");
+      return (response.data || []) as FolderType[];
     },
   });
 
@@ -53,12 +50,12 @@ const ClientDetails = ({ client, onBack }: { client: Client; onBack: () => void 
 
   const createFolderMutation = useMutation({
     mutationFn: async ({ name }: { name: string }) => {
-      const { error } = await supabase.from("folders").insert({
+      const response = await createFolder({
         client_id: client.id,
         name,
         created_by: user!.id,
       });
-      if (error) throw error;
+      if (!response.success) throw new Error(response.error || "Erro ao criar pasta");
     },
     onSuccess: () => {
       toast.success("Pasta criada com sucesso!");
@@ -73,12 +70,7 @@ const ClientDetails = ({ client, onBack }: { client: Client; onBack: () => void 
   });
 
   // Tipos para contabilistas e vínculos
-  interface Accountant {
-    id: string;
-    email: string;
-    full_name: string | null;
-    created_at: string;
-  }
+  // Accountant tipado via API centralizada
 
   interface Assignment {
     id: string;
@@ -89,17 +81,9 @@ const ClientDetails = ({ client, onBack }: { client: Client; onBack: () => void 
   const { data: accountants = [], isLoading: accountantsLoading } = useQuery<Accountant[]>({
     queryKey: ["accountants"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("user_roles")
-        .select("user_id, profiles(id, email, full_name, created_at)")
-        .eq("role", "accountant");
-      if (error) throw error;
-      type UserRoleWithProfile = { user_id: string; profiles: Tables<"profiles"> | null };
-      const rows = (data ?? []) as UserRoleWithProfile[];
-      return rows
-        .map((row) => row.profiles)
-        .filter((p): p is Tables<"profiles"> => p !== null)
-        .map((p) => ({ id: p.id, email: p.email, full_name: p.full_name, created_at: p.created_at }));
+      const response = await listAccountants();
+      if (!response.success) throw new Error(response.error || "Erro ao carregar contabilidades");
+      return response.data || [];
     },
     enabled: userRole === "admin",
   });
@@ -107,26 +91,9 @@ const ClientDetails = ({ client, onBack }: { client: Client; onBack: () => void 
   const { data: assignments = [], isLoading: assignmentsLoading } = useQuery<Assignment[]>({
     queryKey: ["client-accountants", client.id],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("accountant_clients")
-        .select("id, accountant_id, profiles(id, email, full_name)")
-        .eq("client_id", client.id)
-        .order("created_at", { ascending: false });
-      if (error) throw error;
-      type AssignmentRow = { id: string; accountant_id: string; profiles: Tables<"profiles"> | null };
-      const rows = (data ?? []) as AssignmentRow[];
-      return rows
-        .filter((row) => row.profiles !== null)
-        .map((row) => ({
-          id: row.id,
-          accountant_id: row.accountant_id,
-          accountant: {
-            id: row.profiles!.id,
-            email: row.profiles!.email,
-            full_name: row.profiles!.full_name,
-            created_at: row.profiles!.created_at,
-          },
-        }));
+      const response = await getClientAccountants(client.id);
+      if (!response.success) throw new Error(response.error || "Erro ao carregar vínculos");
+      return response.data || [];
     },
     enabled: userRole === "admin",
   });
@@ -135,10 +102,8 @@ const ClientDetails = ({ client, onBack }: { client: Client; onBack: () => void 
 
   const linkMutation = useMutation({
     mutationFn: async (accountantId: string) => {
-      const { error } = await supabase
-        .from("accountant_clients")
-        .insert({ accountant_id: accountantId, client_id: client.id });
-      if (error) throw error;
+      const response = await assignClientToAccountant(accountantId, client.id);
+      if (!response.success) throw new Error(response.error || "Erro ao vincular contabilidade");
     },
     onSuccess: () => {
       toast.success("Vínculo criado com sucesso!");
@@ -156,11 +121,10 @@ const ClientDetails = ({ client, onBack }: { client: Client; onBack: () => void 
 
   const unlinkMutation = useMutation({
     mutationFn: async (assignmentId: string) => {
-      const { error } = await supabase
-        .from("accountant_clients")
-        .delete()
-        .eq("id", assignmentId);
-      if (error) throw error;
+      const target = assignments.find((a) => a.id === assignmentId);
+      if (!target) throw new Error("Vínculo não encontrado");
+      const response = await unassignClientFromAccountant(target.accountant_id, client.id);
+      if (!response.success) throw new Error(response.error || "Erro ao remover vínculo");
     },
     onSuccess: () => {
       toast.success("Vínculo removido!");
@@ -241,8 +205,14 @@ const ClientDetails = ({ client, onBack }: { client: Client; onBack: () => void 
         </CardHeader>
         <CardContent>
           {folders.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              Nenhuma pasta criada ainda
+            <div className="text-center py-12">
+              <div className="rounded-full bg-muted p-4 mb-4 inline-flex">
+                <FolderIcon className="h-8 w-8 text-muted-foreground" />
+              </div>
+              <h3 className="text-lg font-semibold mb-2">Nenhuma pasta criada</h3>
+              <p className="text-muted-foreground max-w-md mx-auto">
+                Organize os documentos fiscais criando pastas por período ou categoria.
+              </p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -254,7 +224,7 @@ const ClientDetails = ({ client, onBack }: { client: Client; onBack: () => void 
                 >
                   <CardContent className="pt-6">
                     <div className="flex flex-col items-center gap-2 text-center">
-                      <Folder className="h-12 w-12 text-primary" />
+                      <FolderIcon className="h-12 w-12 text-primary" />
                       <h3 className="font-semibold">{folder.name}</h3>
                       <p className="text-xs text-muted-foreground">
                         {new Date(folder.created_at).toLocaleDateString("pt-BR")}

@@ -1,13 +1,8 @@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Building2, Loader2 } from "lucide-react";
-
-interface Client {
-  id: string;
-  name: string;
-  cnpj: string;
-  created_at: string;
-}
+import { type Client } from "@/features/clients/api";
+import { memo, useCallback } from "react";
 
 interface ClientsListProps {
   clients: Client[];
@@ -17,10 +12,10 @@ interface ClientsListProps {
   canEdit?: boolean;
 }
 
-const ClientsList = ({ clients, loading, onSelectClient, onEditClient, canEdit = false }: ClientsListProps) => {
-  const formatCNPJ = (cnpj: string) => {
+const ClientsListComponent = ({ clients, loading, onSelectClient, onEditClient, canEdit = false }: ClientsListProps) => {
+  const formatCNPJ = useCallback((cnpj: string) => {
     return cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5");
-  };
+  }, []);
 
   if (loading) {
     return (
@@ -32,8 +27,14 @@ const ClientsList = ({ clients, loading, onSelectClient, onEditClient, canEdit =
 
   if (clients.length === 0) {
     return (
-      <div className="text-center py-8 text-muted-foreground">
-        Nenhum cliente cadastrado ainda
+      <div className="text-center py-12">
+        <div className="rounded-full bg-muted p-4 mb-4 inline-flex">
+          <Building2 className="h-8 w-8 text-muted-foreground" />
+        </div>
+        <h3 className="text-lg font-semibold mb-2">Nenhum cliente cadastrado</h3>
+        <p className="text-muted-foreground max-w-md mx-auto">
+          Comece adicionando seu primeiro cliente para gerenciar documentos fiscais e contábeis.
+        </p>
       </div>
     );
   }
@@ -76,4 +77,24 @@ const ClientsList = ({ clients, loading, onSelectClient, onEditClient, canEdit =
   );
 };
 
-export default ClientsList;
+const areEqual = (prev: ClientsListProps, next: ClientsListProps) => {
+  if (prev.loading !== next.loading) return false;
+  if (prev.canEdit !== next.canEdit) return false;
+  if (prev.onSelectClient !== next.onSelectClient) return false;
+  if (prev.onEditClient !== next.onEditClient) return false;
+  // Compare clients array by length and stable ids
+  if (prev.clients.length !== next.clients.length) return false;
+  for (let i = 0; i < prev.clients.length; i++) {
+    if (prev.clients[i].id !== next.clients[i].id) return false;
+    if (
+      prev.clients[i].name !== next.clients[i].name ||
+      prev.clients[i].cnpj !== next.clients[i].cnpj ||
+      prev.clients[i].created_at !== next.clients[i].created_at
+    ) {
+      return false;
+    }
+  }
+  return true;
+};
+
+export default memo(ClientsListComponent, areEqual);

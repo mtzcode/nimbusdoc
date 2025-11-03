@@ -1,22 +1,15 @@
 import { useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Users } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import AccountantForm from "./AccountantForm";
 import AccountantEditForm from "./AccountantEditForm";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
-import type { Tables } from "@/integrations/supabase/types";
-
-interface Accountant {
-  id: string;
-  email: string;
-  full_name: string | null;
-  created_at: string;
-}
+import { listAccountants, type Accountant } from "@/features/accountants/api";
+import { queryKeys } from "@/lib/queryKeys";
+import AccountantsList from "./AccountantsList";
 
 const AccountantsView = () => {
   const { userRole, appPermissions } = useAuth();
@@ -32,19 +25,13 @@ const AccountantsView = () => {
   const canEdit = userRole === "admin" || (userRole === "user" && (appPermissions?.user_can_edit_accountants ?? false));
 
   const { data: accountants = [], isLoading } = useQuery<Accountant[]>({
-    queryKey: ["accountants"],
+    queryKey: queryKeys.accountants(),
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("user_roles")
-        .select("user_id, profiles(id, email, full_name, created_at)")
-        .eq("role", "accountant");
-      if (error) throw error;
-      type UserRoleWithProfile = { user_id: string; profiles: Tables<"profiles"> | null };
-      const rows = (data ?? []) as UserRoleWithProfile[];
-      return rows
-        .map((row) => row.profiles)
-        .filter((p): p is Tables<"profiles"> => p !== null)
-        .map((p) => ({ id: p.id, email: p.email, full_name: p.full_name, created_at: p.created_at }));
+      const response = await listAccountants();
+      if (!response.success) {
+        throw new Error(response.error || "Erro ao carregar contadores");
+      }
+      return response.data || [];
     },
     enabled: !!canView,
   });
@@ -54,7 +41,7 @@ const AccountantsView = () => {
       <AccountantForm
         onSuccess={() => {
           setShowForm(false);
-          void queryClient.invalidateQueries({ queryKey: ["accountants"] });
+          void queryClient.invalidateQueries({ queryKey: queryKeys.accountants() });
         }}
         onCancel={() => setShowForm(false)}
       />
@@ -67,7 +54,7 @@ const AccountantsView = () => {
         accountant={editingAccountant}
         onSuccess={() => {
           setEditingAccountant(null);
-          void queryClient.invalidateQueries({ queryKey: ["accountants"] });
+          void queryClient.invalidateQueries({ queryKey: queryKeys.accountants() });
         }}
         onCancel={() => setEditingAccountant(null)}
       />
@@ -106,43 +93,12 @@ const AccountantsView = () => {
               Nenhuma contabilidade cadastrada ainda
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nome</TableHead>
-                  <TableHead>E-mail</TableHead>
-                  <TableHead>Data de Cadastro</TableHead>
-                  <TableHead className="text-right">Ações</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {accountants.map((accountant) => (
-                  <TableRow key={accountant.id}>
-                    <TableCell className="font-medium">
-                      <div className="flex items-center gap-2">
-                        <Users className="h-4 w-4 text-primary" />
-                        {accountant.full_name || "Sem nome"}
-                      </div>
-                    </TableCell>
-                    <TableCell>{accountant.email}</TableCell>
-                    <TableCell>
-                      {new Date(accountant.created_at).toLocaleDateString("pt-BR")}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {canEdit && (
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => setEditingAccountant({ id: accountant.id, email: accountant.email, full_name: accountant.full_name })}
-                        >
-                          Editar
-                        </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <AccountantsList
+              accountants={accountants}
+              loading={isLoading}
+              canEdit={canEdit}
+              onEditAccountant={(a) => setEditingAccountant(a)}
+            />
           )}
         </CardContent>
       </Card>

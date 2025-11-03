@@ -5,7 +5,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
+import { notifyError, notifyInfo, notifySuccess, notifyWarning } from "@/lib/feedback";
+import { Loader2 } from "lucide-react";
 import { accountantUpdateSchema, type AccountantUpdateInput } from "@/schemas/accountant";
+import { useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/queryKeys";
 
 interface Accountant {
   id: string;
@@ -21,6 +25,7 @@ interface AccountantEditFormProps {
 
 const AccountantEditForm = ({ accountant, onSuccess, onCancel }: AccountantEditFormProps) => {
   const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
   const [formData, setFormData] = useState<AccountantUpdateInput>({
     fullName: accountant.full_name ?? "",
     email: accountant.email,
@@ -35,7 +40,7 @@ const AccountantEditForm = ({ accountant, onSuccess, onCancel }: AccountantEditF
       const parsed = accountantUpdateSchema.safeParse(formData);
       if (!parsed.success) {
         const first = parsed.error.errors[0];
-        toast.error(first?.message ?? "Dados inválidos");
+        notifyError("update", "contabilidade", first?.message ?? "Dados inválidos");
         setLoading(false);
         return;
       }
@@ -56,9 +61,9 @@ const AccountantEditForm = ({ accountant, onSuccess, onCancel }: AccountantEditF
         if (error || data?.error) {
           credentialsFailed = true;
           const message = error?.message ?? data?.error ?? "Erro ao atualizar credenciais (Auth)";
-          toast.warning(message);
+          notifyWarning(message);
         } else if (data?.confirmation_sent) {
-          toast.success("E-mail de confirmação enviado para o novo endereço!");
+          notifySuccess("update", "credenciais", "E-mail de confirmação enviado");
         }
       }
 
@@ -69,18 +74,19 @@ const AccountantEditForm = ({ accountant, onSuccess, onCancel }: AccountantEditF
         .eq("id", accountant.id);
       if (profileError) throw profileError;
 
-      toast.success("Contabilidade atualizada com sucesso!");
+      notifySuccess("update", "contabilidade", formData.fullName);
       if (shouldUpdateCredentials) {
         if (credentialsFailed) {
-          toast.info("Nome atualizado; e-mail/senha não foram alterados");
+          notifyInfo("Nome atualizado; e-mail/senha não foram alterados");
         } else {
-          toast.success("Credenciais atualizadas com sucesso!");
+          notifySuccess("update", "credenciais");
         }
       }
+      await queryClient.invalidateQueries({ queryKey: queryKeys.accountants() });
       onSuccess();
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
-      toast.error(message || "Erro ao atualizar contabilidade");
+      notifyError("update", "contabilidade", message);
     } finally {
       setLoading(false);
     }
@@ -93,10 +99,10 @@ const AccountantEditForm = ({ accountant, onSuccess, onCancel }: AccountantEditF
         redirectTo: `${window.location.origin}/auth`,
       });
       if (error) throw error;
-      toast.success("E-mail de redefinição de senha enviado!");
+      notifySuccess("update", "senha", "E-mail de redefinição enviado");
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
-      toast.error(message || "Erro ao enviar redefinição de senha");
+      notifyError("update", "senha", message || "Erro ao enviar redefinição de senha");
     } finally {
       setSendingReset(false);
     }
@@ -136,14 +142,26 @@ const AccountantEditForm = ({ accountant, onSuccess, onCancel }: AccountantEditF
               />
             </div>
             <div className="flex gap-2">
-              <Button type="submit" disabled={loading}>
-                {loading ? "Salvando..." : "Salvar Alterações"}
+              <Button type="submit" disabled={loading} className="gap-2">
+                {loading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Salvando...
+                  </>
+                ) : (
+                  "Salvar Alterações"
+                )}
               </Button>
               <Button type="button" variant="outline" onClick={onCancel}>
                 Cancelar
               </Button>
-              <Button type="button" variant="secondary" onClick={sendResetPassword} disabled={sendingReset}>
-                {sendingReset ? "Enviando..." : "Enviar Redefinição de Senha"}
+              <Button type="button" variant="secondary" onClick={sendResetPassword} disabled={sendingReset} className="gap-2">
+                {sendingReset ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Enviando...
+                  </>
+                ) : (
+                  "Enviar Redefinição de Senha"
+                )}
               </Button>
             </div>
           </form>

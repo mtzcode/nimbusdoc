@@ -1,17 +1,14 @@
 import { useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { toast } from "sonner";
+import { notifyError, notifySuccess } from "@/lib/feedback";
+import { Loader2 } from "lucide-react";
 import { clientSchema, type ClientInput } from "@/schemas/client";
-
-interface Client {
-  id: string;
-  name: string;
-  cnpj: string;
-}
+import { updateClient, type Client } from "@/features/clients/api";
+import { useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/queryKeys";
 
 interface ClientEditFormProps {
   client: Client;
@@ -21,6 +18,7 @@ interface ClientEditFormProps {
 
 const ClientEditForm = ({ client, onSuccess, onCancel }: ClientEditFormProps) => {
   const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
   const [formData, setFormData] = useState<ClientInput>({
     name: client.name,
     cnpj: client.cnpj,
@@ -33,25 +31,25 @@ const ClientEditForm = ({ client, onSuccess, onCancel }: ClientEditFormProps) =>
       const parsed = clientSchema.safeParse(formData);
       if (!parsed.success) {
         const first = parsed.error.errors[0];
-        toast.error(first?.message ?? "Dados inválidos");
+        notifyError("update", "cliente", first?.message ?? "Dados inválidos");
         setLoading(false);
         return;
       }
 
       const { name, cnpj } = parsed.data;
 
-      const { error } = await supabase
-        .from("clients")
-        .update({ name, cnpj })
-        .eq("id", client.id);
+      const response = await updateClient(client.id, { name, cnpj });
 
-      if (error) throw error;
+      if (!response.success) {
+        throw new Error(response.error || "Erro ao atualizar cliente");
+      }
 
-      toast.success("Cliente atualizado com sucesso!");
+      notifySuccess("update", "cliente", name);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.clients() });
       onSuccess();
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
-      toast.error(message || "Erro ao atualizar cliente");
+      notifyError("update", "cliente", message);
     } finally {
       setLoading(false);
     }
@@ -87,8 +85,14 @@ const ClientEditForm = ({ client, onSuccess, onCancel }: ClientEditFormProps) =>
               />
             </div>
             <div className="flex gap-2">
-              <Button type="submit" disabled={loading}>
-                {loading ? "Salvando..." : "Salvar Alterações"}
+              <Button type="submit" disabled={loading} className="gap-2">
+                {loading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Salvando...
+                  </>
+                ) : (
+                  "Salvar Alterações"
+                )}
               </Button>
               <Button type="button" variant="outline" onClick={onCancel}>
                 Cancelar

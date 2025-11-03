@@ -1,12 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
-import { supabase } from "@/integrations/supabase/client";
+// Supabase removido: usar API centralizada de clientes
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, Building2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import ClientDetails from "../admin/ClientDetails";
-import type { Tables } from "@/integrations/supabase/types";
+import { listAccountantClients, type Client } from "@/features/clients/api";
 
-type Client = Pick<Tables<"clients">, "id" | "name" | "cnpj" | "created_at">;
 
 const AccountantClientsView = () => {
   const { user } = useAuth();
@@ -18,19 +17,9 @@ const AccountantClientsView = () => {
     if (!user) return;
 
     try {
-      const { data, error } = await supabase
-        .from("accountant_clients")
-        .select("client_id, clients(id, name, cnpj, created_at)")
-        .eq("accountant_id", user.id);
-
-      if (error) throw error;
-
-      const records = (data ?? []) as Array<{ clients: Client | null }>;
-      const clientsData = records
-        .map((item) => item.clients)
-        .filter((c): c is Client => c !== null && c !== undefined);
-
-      setClients(clientsData);
+      const response = await listAccountantClients(user.id);
+      if (!response.success) throw new Error(response.error || "Erro ao carregar clientes");
+      setClients(response.data || []);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       console.error("Error fetching clients:", message);
@@ -72,8 +61,14 @@ const AccountantClientsView = () => {
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
           ) : clients.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              Nenhum cliente vinculado ainda
+            <div className="text-center py-12">
+              <div className="rounded-full bg-muted p-4 mb-4 inline-flex">
+                <Building2 className="h-8 w-8 text-muted-foreground" />
+              </div>
+              <h3 className="text-lg font-semibold mb-2">Nenhum cliente vinculado</h3>
+              <p className="text-muted-foreground max-w-md mx-auto">
+                Aguarde o administrador vincular clientes à sua contabilidade para acessar os documentos.
+              </p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

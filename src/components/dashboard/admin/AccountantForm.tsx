@@ -5,7 +5,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
+import { notifyError, notifySuccess } from "@/lib/feedback";
+import { Loader2 } from "lucide-react";
 import { accountantCreateSchema, type AccountantCreateInput } from "@/schemas/accountant";
+import { useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/queryKeys";
 
 interface AccountantFormProps {
   onSuccess: () => void;
@@ -14,6 +18,7 @@ interface AccountantFormProps {
 
 const AccountantForm = ({ onSuccess, onCancel }: AccountantFormProps) => {
   const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
   const [formData, setFormData] = useState<AccountantCreateInput>({
     email: "",
     password: "",
@@ -28,7 +33,7 @@ const AccountantForm = ({ onSuccess, onCancel }: AccountantFormProps) => {
       const parsed = accountantCreateSchema.safeParse(formData);
       if (!parsed.success) {
         const first = parsed.error.errors[0];
-        toast.error(first?.message ?? "Dados inválidos");
+        notifyError("create", "contabilidade", first?.message ?? "Dados inválidos");
         setLoading(false);
         return;
       }
@@ -57,11 +62,12 @@ const AccountantForm = ({ onSuccess, onCancel }: AccountantFormProps) => {
         if (roleError) throw roleError;
       }
 
-      toast.success("Contabilidade cadastrada com sucesso!");
+      notifySuccess("create", "contabilidade", formData.fullName);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.accountants() });
       onSuccess();
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
-      toast.error(message || "Erro ao cadastrar contabilidade");
+      notifyError("create", "contabilidade", message);
     } finally {
       setLoading(false);
     }
@@ -109,8 +115,14 @@ const AccountantForm = ({ onSuccess, onCancel }: AccountantFormProps) => {
               />
             </div>
             <div className="flex gap-2">
-              <Button type="submit" disabled={loading}>
-                {loading ? "Cadastrando..." : "Cadastrar Contabilidade"}
+              <Button type="submit" disabled={loading} className="gap-2">
+                {loading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Cadastrando...
+                  </>
+                ) : (
+                  "Cadastrar Contabilidade"
+                )}
               </Button>
               <Button type="button" variant="outline" onClick={onCancel}>
                 Cancelar

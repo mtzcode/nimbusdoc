@@ -3,6 +3,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { notifyError, notifySuccess } from "@/lib/feedback";
+import { Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
 type Permissions = {
@@ -32,7 +34,7 @@ const SettingsPermissions = () => {
         .limit(1)
         .maybeSingle();
       if (error) {
-        toast.error("Erro ao carregar permissões", { description: error.message });
+        notifyError("download", "permissões", error.message);
         return;
       }
       if (data) {
@@ -83,12 +85,12 @@ const SettingsPermissions = () => {
 
     setLoading(false);
     if (error) {
-      toast.error("Erro ao salvar permissões", { description: error.message });
+      notifyError("update", "permissões", error.message);
       return;
     }
 
     if (!data) {
-      toast.error("Nenhuma permissão foi atualizada. Verifique se seu usuário é admin.");
+      notifyError("update", "permissões", "Nenhuma permissão atualizada (verifique se é admin)");
       return;
     }
 
@@ -102,7 +104,7 @@ const SettingsPermissions = () => {
       user_can_edit_accountants: p.user_can_edit_accountants ?? false,
     });
 
-    toast.success("Permissões atualizadas com sucesso");
+    notifySuccess("update", "permissões");
   };
 
   return (
@@ -194,8 +196,14 @@ const SettingsPermissions = () => {
               </div>
 
               <div>
-                <Button onClick={handleSave} disabled={loading}>
-                  {loading ? "Salvando..." : "Salvar"}
+                <Button onClick={handleSave} disabled={loading} className="gap-2">
+                  {loading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" /> Salvando...
+                    </>
+                  ) : (
+                    "Salvar"
+                  )}
                 </Button>
               </div>
             </div>

@@ -24,7 +24,8 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
-      "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
+      // Desativado para evitar falsos positivos em componentes UI (shadcn) que exportam utilitários
+      "react-refresh/only-export-components": "off",
       "@typescript-eslint/no-unused-vars": "off",
       "@typescript-eslint/no-floating-promises": "error",
     },

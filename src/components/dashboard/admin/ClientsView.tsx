@@ -1,56 +1,45 @@
-import { useState, useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import ClientForm from "./ClientForm";
 import ClientsList from "./ClientsList";
+import VirtualizedClientsList from "./VirtualizedClientsList";
 import ClientDetails from "./ClientDetails";
 import ClientEditForm from "./ClientEditForm";
 import { useAuth } from "@/contexts/AuthContext";
-
-interface Client {
-  id: string;
-  name: string;
-  cnpj: string;
-  created_at: string;
-}
+import { listClients, type Client } from "@/features/clients/api";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/queryKeys";
+import { useRealtimeClientsSync } from "@/lib/realtimeSync";
+import { VIRTUAL_LIST_THRESHOLD } from "@/lib/config";
 
 const ClientsView = () => {
   const { userRole, appPermissions } = useAuth();
-  const [clients, setClients] = useState<Client[]>([]);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
 
   const canEdit =
     userRole === "admin" || (userRole === "user" && (appPermissions?.user_can_edit_clients ?? false));
 
-  const fetchClients = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("clients")
-        .select("*")
-        .order("created_at", { ascending: false });
+  const canLoad = userRole === "admin" || userRole === "user";
 
-      if (error) throw error;
-      setClients(data || []);
-    } catch (error) {
-      console.error("Error fetching clients:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { data: clients = [], isLoading: loading } = useQuery<Client[]>({
+    queryKey: queryKeys.clients(),
+    queryFn: async () => {
+      const response = await listClients();
+      if (!response.success) {
+        throw new Error(response.error || "Erro ao carregar clientes");
+      }
+      return response.data || [];
+    },
+    enabled: canLoad,
+  });
 
-  useEffect(() => {
-    const canLoad = userRole === "admin" || userRole === "user";
-    if (canLoad) {
-      void fetchClients();
-    } else {
-      setLoading(false);
-    }
-  }, [userRole]);
+  // Realtime cache reconciliation for clients
+  useRealtimeClientsSync(canLoad);
 
   if (selectedClient) {
     return (
@@ -66,7 +55,7 @@ const ClientsView = () => {
       <ClientForm
         onSuccess={() => {
           setShowForm(false);
-          void fetchClients();
+          void queryClient.invalidateQueries({ queryKey: queryKeys.clients() });
         }}
         onCancel={() => setShowForm(false)}
       />
@@ -79,7 +68,7 @@ const ClientsView = () => {
         client={editingClient}
         onSuccess={() => {
           setEditingClient(null);
-          void fetchClients();
+          void queryClient.invalidateQueries({ queryKey: queryKeys.clients() });
         }}
         onCancel={() => setEditingClient(null)}
       />
@@ -107,13 +96,22 @@ const ClientsView = () => {
           </CardDescription>
         </CardHeader>
         <CardContent>
-      <ClientsList
-        clients={clients}
-        loading={loading}
-        onSelectClient={setSelectedClient}
-        onEditClient={setEditingClient}
-        canEdit={canEdit}
-      />
+      {clients.length > VIRTUAL_LIST_THRESHOLD ? (
+        <VirtualizedClientsList
+          clients={clients}
+          onSelectClient={setSelectedClient}
+          onEditClient={setEditingClient}
+          canEdit={canEdit}
+        />
+      ) : (
+        <ClientsList
+          clients={clients}
+          loading={loading}
+          onSelectClient={setSelectedClient}
+          onEditClient={setEditingClient}
+          canEdit={canEdit}
+        />
+      )}
         </CardContent>
       </Card>
     </div>

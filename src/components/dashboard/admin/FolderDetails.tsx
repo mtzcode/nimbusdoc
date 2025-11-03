@@ -1,12 +1,25 @@
 import { useState, useEffect, useCallback } from "react";
-import { supabase } from "@/integrations/supabase/client";
+// Supabase removido: usar APIs centralizadas de folders/files
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { ArrowLeft, Upload, Download, Trash2, Loader2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+import { notifyError, notifySuccess } from "@/lib/feedback";
 import { useAuth } from "@/contexts/AuthContext";
+import { listFiles, uploadFile, createFile, downloadStorageFile, removeStorageFile, removeFile, type FileRecord } from "@/features/folders/api";
 
 interface FolderType {
   id: string;
@@ -35,20 +48,18 @@ const FolderDetails = ({
   const [files, setFiles] = useState<FileType[]>([]);
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [fileToDelete, setFileToDelete] = useState<FileType | null>(null);
 
   const canUpload = userRole === "admin" || !!appPermissions?.user_can_manage_folders;
   const canDelete = userRole === "admin" || !!appPermissions?.user_can_delete_files;
 
   const fetchFiles = useCallback(async () => {
     try {
-      const { data, error } = await supabase
-        .from("files")
-        .select("*")
-        .eq("folder_id", folder.id)
-        .order("uploaded_at", { ascending: false });
-
-      if (error) throw error;
-      setFiles(data || []);
+      const response = await listFiles(folder.id);
+      if (!response.success) throw new Error(response.error || "Erro ao carregar arquivos");
+      setFiles((response.data || []) as FileType[]);
     } catch (error) {
       console.error("Error fetching files:", error);
     } finally {
@@ -67,14 +78,10 @@ const FolderDetails = ({
     setUploading(true);
     try {
       const filePath = `${folder.id}/${Date.now()}_${file.name}`;
-      
-      const { error: uploadError } = await supabase.storage
-        .from("fiscal-files")
-        .upload(filePath, file);
+      const uploadResp = await uploadFile(file, filePath);
+      if (!uploadResp.success) throw new Error(uploadResp.error || "Falha no upload");
 
-      if (uploadError) throw uploadError;
-
-      const { error: dbError } = await supabase.from("files").insert({
+      const createResp = await createFile({
         folder_id: folder.id,
         name: file.name,
         file_path: filePath,
@@ -82,14 +89,13 @@ const FolderDetails = ({
         file_type: file.type,
         uploaded_by: user.id,
       });
+      if (!createResp.success) throw new Error(createResp.error || "Falha ao registrar arquivo");
 
-      if (dbError) throw dbError;
-
-      toast.success("Arquivo enviado com sucesso!");
+      notifySuccess("upload", "arquivo", file.name);
       void fetchFiles();
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Erro ao enviar arquivo";
-      toast.error(message);
+      notifyError("upload", "arquivo", message);
     } finally {
       setUploading(false);
       e.target.value = "";
@@ -97,14 +103,12 @@ const FolderDetails = ({
   };
 
   const handleDownload = async (file: FileType) => {
+    setDownloadingId(file.id);
     try {
-      const { data, error } = await supabase.storage
-        .from("fiscal-files")
-        .download(file.file_path);
+      const resp = await downloadStorageFile(file.file_path);
+      if (!resp.success || !resp.data) throw new Error(resp.error || "Falha ao baixar");
 
-      if (error) throw error;
-
-      const url = window.URL.createObjectURL(data);
+      const url = window.URL.createObjectURL(resp.data);
       const a = document.createElement("a");
       a.href = url;
       a.download = file.name;
@@ -113,31 +117,30 @@ const FolderDetails = ({
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
     } catch (error: unknown) {
-      toast.error("Erro ao baixar arquivo");
+      const message = error instanceof Error ? error.message : "Erro ao baixar arquivo";
+      notifyError("download", "arquivo", message);
+    } finally {
+      setDownloadingId(null);
     }
   };
 
   const handleDelete = async (file: FileType) => {
-    if (!confirm("Deseja realmente excluir este arquivo?")) return;
-
+    setDeletingId(file.id);
     try {
-      const { error: storageError } = await supabase.storage
-        .from("fiscal-files")
-        .remove([file.file_path]);
+      const storageResp = await removeStorageFile(file.file_path);
+      if (!storageResp.success) throw new Error(storageResp.error || "Falha ao excluir do storage");
 
-      if (storageError) throw storageError;
+      const dbResp = await removeFile(file.id);
+      if (!dbResp.success) throw new Error(dbResp.error || "Falha ao excluir do banco");
 
-      const { error: dbError } = await supabase
-        .from("files")
-        .delete()
-        .eq("id", file.id);
-
-      if (dbError) throw dbError;
-
-      toast.success("Arquivo excluído com sucesso!");
+      notifySuccess("delete", "arquivo", file.name);
       void fetchFiles();
     } catch (error: unknown) {
-      toast.error("Erro ao excluir arquivo");
+      const message = error instanceof Error ? error.message : "Erro ao excluir arquivo";
+      notifyError("delete", "arquivo", message);
+    } finally {
+      setDeletingId(null);
+      setFileToDelete(null);
     }
   };
 
@@ -178,8 +181,12 @@ const FolderDetails = ({
                   id="file-upload"
                 />
                 <Button asChild disabled={uploading} className="gap-2">
-                  <label htmlFor="file-upload" className="cursor-pointer">
-                    <Upload className="h-4 w-4" />
+                  <label htmlFor="file-upload" className="cursor-pointer inline-flex items-center gap-2">
+                    {uploading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Upload className="h-4 w-4" />
+                    )}
                     {uploading ? "Enviando..." : "Enviar Arquivo"}
                   </label>
                 </Button>
@@ -193,8 +200,14 @@ const FolderDetails = ({
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
           ) : files.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              Nenhum arquivo enviado ainda
+            <div className="text-center py-12">
+              <div className="rounded-full bg-muted p-4 mb-4 inline-flex">
+                <Upload className="h-8 w-8 text-muted-foreground" />
+              </div>
+              <h3 className="text-lg font-semibold mb-2">Nenhum arquivo enviado</h3>
+              <p className="text-muted-foreground max-w-md mx-auto">
+                Faça upload dos documentos fiscais e contábeis para esta pasta.
+              </p>
             </div>
           ) : (
             <Table>
@@ -220,17 +233,53 @@ const FolderDetails = ({
                           variant="outline"
                           size="sm"
                           onClick={() => handleDownload(file)}
+                          disabled={downloadingId === file.id}
                         >
-                          <Download className="h-4 w-4" />
+                          {downloadingId === file.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Download className="h-4 w-4" />
+                          )}
                         </Button>
                         {canDelete && (
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            onClick={() => handleDelete(file)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => setFileToDelete(file)}
+                                disabled={deletingId === file.id}
+                              >
+                                {deletingId === file.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-4 w-4" />
+                                )}
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Excluir arquivo</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  {`Você está prestes a excluir o arquivo "${file.name}". Esta ação é irreversível.`}
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                <AlertDialogAction
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                  onClick={() => handleDelete(file)}
+                                  disabled={deletingId === file.id}
+                                >
+                                  {deletingId === file.id ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    "Excluir"
+                                  )}
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
                         )}
                       </div>
                     </TableCell>
